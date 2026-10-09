@@ -395,12 +395,13 @@ namespace py
 
 	/**
 	 * Blocks until a future is ready, giving up the GIL only when it is not ready within
-	 * gilKeepWait (see GilRelease).
+	 * gilKeepWait (see GilRelease). A deferred future returns at once: it runs in this thread,
+	 * with the GIL, when its result is taken.
 	 */
 	template<typename _Future>
 	void waitWithoutGil(const _Future& f)
 	{
-		if (f.wait_for(gilKeepWait) == std::future_status::ready) return;
+		if (f.wait_for(gilKeepWait) != std::future_status::timeout) return;
 		GilRelease nogil;
 		f.wait();
 	}
@@ -2117,6 +2118,8 @@ namespace py
 			{
 				auto f = std::move(futures.front());
 				futures.pop_front();
+				// A deferred result nobody takes any more is not computed.
+				if (f.wait_for(std::chrono::seconds{ 0 }) == std::future_status::deferred) continue;
 				waitWithoutGil(f);
 				f.get();
 			}

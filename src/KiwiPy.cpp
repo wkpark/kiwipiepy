@@ -2099,6 +2099,12 @@ struct AnalysisContext
 	py::SurrogateOffsetMap sourceOffsets;
 };
 
+// A text whose length times topN is below this is analysed with the GIL held. Its analysis takes
+// about as long as getting the GIL back can, so releasing it made each call slower next to a
+// thread running Python code (six times at 250 characters); from about this length it cost
+// nothing. The analysis time grows with topN too (3.7 times at topN=5), hence the product.
+static constexpr size_t gilReleaseMinLength = 4000;
+
 struct KiwiResIter : public py::ResultIter<KiwiResIter, vector<TokenResult>, FutureCarrier<vector<TokenResult>, AnalysisContext>>
 {
 	py::UniqueCObj<KiwiObject> kiwi;
@@ -2150,12 +2156,27 @@ struct KiwiResIter : public py::ResultIter<KiwiResIter, vector<TokenResult>, Fut
 		{
 			updatePretokenizedSpanToU16(pretokenized.first, so);
 		}
-		return makeFutureCarrier(
-			kiwiInst->asyncAnalyze(move(so.str), topN,
+		future<vector<TokenResult>> analysis;
+		if (kiwiInst->getThreadPool())
+		{
+			analysis = kiwiInst->asyncAnalyze(move(so.str), topN,
 				options,
 				move(pretokenized.first),
 				config
-			),
+			);
+		}
+		else
+		{
+			// With no thread pool (num_workers=0), a text is analysed when its result is taken.
+			analysis = async(launch::deferred, [kiwiInst = kiwiInst, str = move(so.str), topN = topN, options = options, pt = move(pretokenized.first), config = config]()
+			{
+				if (str.size() * topN < gilReleaseMinLength) return kiwiInst->analyze(str, topN, options, pt, config);
+				py::GilRelease nogil;
+				return kiwiInst->analyze(str, topN, options, pt, config);
+			});
+		}
+		return makeFutureCarrier(
+			move(analysis),
 			AnalysisContext{ move(pretokenized.second), move(so.offsets) }
 		);
 	}
@@ -2536,12 +2557,6 @@ py::UniqueObj KiwiObject::extractAddWords(PyObject* sentences, size_t minCnt, si
 	}
 	return retList;
 }
-
-// A text whose length times topN is below this is analysed with the GIL held. Its analysis takes
-// about as long as getting the GIL back can, so releasing it made each call slower next to a
-// thread running Python code (six times at 250 characters); from about this length it cost
-// nothing. The analysis time grows with topN too (3.7 times at topN=5), hence the product.
-static constexpr size_t gilReleaseMinLength = 4000;
 
 py::UniqueObj KiwiObject::analyze(PyObject* text, size_t topN, 
 	Match matchOptions, bool echo, PyObject* blockList, bool openEnding, 

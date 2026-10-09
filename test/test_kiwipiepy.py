@@ -859,6 +859,17 @@ def test_space():
     ]))
     assert res_a == [res0, res1, res2]
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_batch_without_thread_pool():
+    kiwi = Kiwi(num_workers=0)
+    pooled = Kiwi(num_workers=1)
+    texts = ["안녕하세요. 반갑습니다.", "띄어쓰기없이작성된텍스트네이걸교정해줘."]
+
+    assert [[(t.form, t.tag) for t in r] for r in kiwi.tokenize(texts)] == [[(t.form, t.tag) for t in kiwi.tokenize(s)] for s in texts]
+    assert [[s.text for s in r] for r in kiwi.split_into_sents(texts)] == [[s.text for s in r] for r in pooled.split_into_sents(texts)]
+    assert list(kiwi.space(texts)) == list(pooled.space(texts))
+    assert kiwi.glue(["그러나 알고보니 그 봉", "지 안에 있던 것은 바로"]) == pooled.glue(["그러나 알고보니 그 봉", "지 안에 있던 것은 바로"])
+
 def test_space_with_multiword_token():
     kiwi = Kiwi()
     kiwi.add_user_word('구미 1동', 'NNP', 10)

@@ -3,6 +3,8 @@ import threading
 import time
 from threading import Thread
 
+import pytest
+
 from kiwipiepy import Kiwi, MorphemeSet, TypoTransformer, basic_typos
 
 NUM_THREADS = 16
@@ -105,8 +107,11 @@ def test_long_analysis_lets_other_threads_run():
     assert _blocked_share(lambda: kiwi.tokenize(LONG_TEXT)) < 0.5
 
 
-def test_waiting_for_a_batch_lets_other_threads_run():
-    kiwi = Kiwi(num_workers=2)
+# num_workers=0 analyses a batch in the calling thread when its results are taken.
+@pytest.mark.parametrize("num_workers", [2, 0])
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_waiting_for_a_batch_lets_other_threads_run(num_workers):
+    kiwi = Kiwi(num_workers=num_workers)
     kiwi.tokenize(SHORT_TEXT)
     assert _blocked_share(lambda: list(kiwi.tokenize([LONG_TEXT, LONG_TEXT]))) < 0.5
 
@@ -152,10 +157,12 @@ def test_finished_batch_results_keep_their_speed_next_to_a_busy_thread():
     assert contended < alone * 5 + 0.1
 
 
-def test_analysis_while_its_inputs_change():
+@pytest.mark.parametrize("num_workers", [2, 0])
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_analysis_while_its_inputs_change(num_workers):
     # Analyses running without the GIL read the blocklist and the typo transformer while other
     # threads rebuild Kiwi, change both and re-initialise the typo transformer.
-    kiwi = Kiwi(num_workers=2)
+    kiwi = Kiwi(num_workers=num_workers)
     blocklist = MorphemeSet(kiwi, ['고마움'])
     typos = basic_typos.copy()
     text = "고마움을 전합니다. " * 3000

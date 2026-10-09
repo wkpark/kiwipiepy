@@ -2037,6 +2037,11 @@ struct FutureCarrier
 	FutureCarrier(FutureCarrier&&) = default;
 	FutureCarrier& operator=(FutureCarrier&&) = default;
 
+	void wait() const
+	{
+		future.wait();
+	}
+
 	std::pair<FutureTy, CarriedTy> get()
 	{
 		return std::make_pair(future.get(), std::move(carried));

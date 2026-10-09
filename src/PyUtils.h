@@ -2079,7 +2079,9 @@ namespace py
 			{
 				auto f = std::move(futures.front());
 				futures.pop_front();
-				f.get();
+				// Only waits: nobody takes these results, and an analysis error rethrown here, from
+				// a destructor, would abort the process.
+				f.wait();
 			}
 		}
 

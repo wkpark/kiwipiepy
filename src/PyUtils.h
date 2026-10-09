@@ -391,7 +391,7 @@ namespace py
 	template<typename _Future>
 	void waitWithoutGil(const _Future& f)
 	{
-		if (f.wait_for(gilKeepWait) == std::future_status::ready) return;
+		if (f.wait_for(gilKeepWait) != std::future_status::timeout) return;
 		GilRelease nogil;
 		f.wait();
 	}
@@ -2108,6 +2108,7 @@ namespace py
 			{
 				auto f = std::move(futures.front());
 				futures.pop_front();
+				if (f.wait_for(std::chrono::seconds{ 0 }) == std::future_status::deferred) continue;
 				waitWithoutGil(f);
 				f.get();
 			}
